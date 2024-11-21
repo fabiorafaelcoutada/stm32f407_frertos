@@ -18,46 +18,82 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "cmsis_os.h"
+#include "i2c.h"
+#include "rng.h"
+#include "usart.h"
+#include "gpio.h"
+#include "circular_buffer.h"
 
-/* Private includes ----------------------------------------------------------*/
-/* USER CODE BEGIN Includes */
 
-/* USER CODE END Includes */
+CircularBuffer_t tempBuffer;
 
-/* Private typedef -----------------------------------------------------------*/
-/* USER CODE BEGIN PTD */
 
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
-/* USER CODE END PD */
-
-/* Private macro -------------------------------------------------------------*/
-/* USER CODE BEGIN PM */
-
-/* USER CODE END PM */
-
-/* Private variables ---------------------------------------------------------*/
-UART_HandleTypeDef huart2;
-
-/* USER CODE BEGIN PV */
-
-/* USER CODE END PV */
-
-/* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
-/* USER CODE BEGIN PFP */
+void MX_FREERTOS_Init(void);
 
-/* USER CODE END PFP */
+/**
+ * @brief Simulates temperature readings.
+ *
+ * This function generates a random temperature value between 20.0 and 30.0 degrees Celsius.
+ * It uses the hardware random number generator (RNG) to produce the random value.
+ *
+ * @return float Simulated temperature value.
+ */
+float get_simulated_temperature() {
+  uint32_t random_value;
+  HAL_RNG_GenerateRandomNumber(&hrng, &random_value);
+  // Simulate temperature between 20.0 and 30.0 degrees
+  return 20.0f + (random_value % 1000) / 100.0f;
+}
 
-/* Private user code ---------------------------------------------------------*/
-/* USER CODE BEGIN 0 */
+/**
+ * @brief Transmits data over UART.
+ *
+ * This function sends a specified number of bytes from the provided data buffer
+ * over the UART interface. It uses the HAL_UART_Transmit function to perform
+ * the transmission and waits until the transmission is complete.
+ *
+ * @param file Unused parameter, included for compatibility with standard I/O functions.
+ * @param data Pointer to the data buffer to be transmitted.
+ * @param len Number of bytes to transmit from the data buffer.
+ * @return int The number of bytes transmitted.
+ */
+int _write(int file, char *data, int len) {
+  HAL_UART_Transmit(&huart2, (uint8_t *)data, len, HAL_MAX_DELAY);
+  return len;
+}
 
-/* USER CODE END 0 */
+/**
+  * @brief  Function implementing the LogTemperature thread.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_vLogTemperatureTask */
+void vLogTemperatureTask(void *argument)
+{
+  for(;;)
+  {
+	  CircularBuffer_Add(&tempBuffer, get_simulated_temperature());
+	  osDelay(1000);
+  }
+}
+
+/**
+* @brief Function implementing the myTask02 thread.
+* @param argument: Not used
+* @retval None
+*/
+/* USER CODE END Header_StartTask02 */
+void vDisplayTemperatureTask(void *argument)
+{
+  for(;;)
+  {
+	  // Print the contents of the circular buffer
+	  CircularBuffer_Print(&tempBuffer);
+	  osDelay(5000);
+  }
+}
 
 /**
   * @brief  The application entry point.
@@ -65,43 +101,30 @@ static void MX_USART2_UART_Init(void);
   */
 int main(void)
 {
-
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
 
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_I2C1_Init();
   MX_USART2_UART_Init();
-  /* USER CODE BEGIN 2 */
+  MX_RNG_Init();
+  MX_USART3_UART_Init();
+  CircularBuffer_Init(&tempBuffer);
+  /* Init scheduler */
+  osKernelInitialize();
 
-  /* USER CODE END 2 */
+  /* Call init function for freertos objects (in cmsis_os2.c) */
+  MX_FREERTOS_Init();
 
-  /* Infinite loop */
-  /* USER CODE BEGIN WHILE */
-  while (1)
-  {
-    /* USER CODE END WHILE */
+  /* Start scheduler */
+  osKernelStart();
 
-    /* USER CODE BEGIN 3 */
-  }
-  /* USER CODE END 3 */
+  while (1) {}
+
 }
 
 /**
@@ -121,10 +144,14 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -134,70 +161,31 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_0) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
 }
 
 /**
-  * @brief USART2 Initialization Function
-  * @param None
+  * @brief  Period elapsed callback in non blocking mode
+  * @note   This function is called  when TIM5 interrupt took place, inside
+  * HAL_TIM_IRQHandler(). It makes a direct call to HAL_IncTick() to increment
+  * a global variable "uwTick" used as application time base.
+  * @param  htim : TIM handle
   * @retval None
   */
-static void MX_USART2_UART_Init(void)
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
+  if (htim->Instance == TIM5) {
+    HAL_IncTick();
   }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
 }
-
-/**
-  * @brief GPIO Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_GPIO_Init(void)
-{
-/* USER CODE BEGIN MX_GPIO_Init_1 */
-/* USER CODE END MX_GPIO_Init_1 */
-
-  /* GPIO Ports Clock Enable */
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-
-/* USER CODE BEGIN MX_GPIO_Init_2 */
-/* USER CODE END MX_GPIO_Init_2 */
-}
-
-/* USER CODE BEGIN 4 */
-
-/* USER CODE END 4 */
 
 /**
   * @brief  This function is executed in case of error occurrence.
@@ -208,10 +196,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  while (1)
-  {
-  }
-  /* USER CODE END Error_Handler_Debug */
+  while (1) {}
 }
 
 #ifdef  USE_FULL_ASSERT
@@ -224,9 +209,6 @@ void Error_Handler(void)
   */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
+
 }
 #endif /* USE_FULL_ASSERT */
