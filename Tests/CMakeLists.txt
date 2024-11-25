@@ -22,7 +22,7 @@ add_executable(main ${SOURCES})
 
 # Add the Unity testing executable
 set(TEST_SOURCES
-        test/test_cb.c
+        test/test_temon.c
         src/temperature_monitor.c
         test/unity.c
 )
