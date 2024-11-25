@@ -1,14 +1,14 @@
-// temperature_monitor.h
 #ifndef TEMPERATURE_MONITOR_H
 #define TEMPERATURE_MONITOR_H
 
 #include <pthread.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <time.h>
 
 #define BUFFER_SIZE 10U
-#define SENSOR_READ_INTERVAL_MS 1000U
-#define DISPLAY_INTERVAL_MS 5000U
+#define SENSOR_READ_INTERVAL_SEC 1U
+#define DISPLAY_INTERVAL_SEC 5U
 
 typedef struct {
     float temperatures[BUFFER_SIZE];
@@ -27,7 +27,9 @@ void circular_buffer_init(CircularBuffer_t* const buffer);
 bool circular_buffer_write(CircularBuffer_t* const buffer, const float value);
 bool circular_buffer_read(CircularBuffer_t* const buffer, float* const value);
 float simulate_temperature_reading(void);
+void display_buffer_contents(CircularBuffer_t* const buffer);
 void* sensor_thread(void* arg);
 void* display_thread(void* arg);
+void sleep_until_next_period(struct timespec* next_period, time_t interval_sec);
 
 #endif // TEMPERATURE_MONITOR_H
