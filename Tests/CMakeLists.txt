@@ -10,7 +10,7 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 
 # Add source files
 set(SOURCES
-        src/main.c
+        test/test_temon.c
         src/temperature_monitor.c
 )
 
@@ -18,11 +18,11 @@ set(SOURCES
 include_directories(src)
 
 # Create an executable target for the main program
-add_executable(main ${SOURCES})
+add_executable(test_temon ${SOURCES})
 
 # Add the Unity testing executable
 set(TEST_SOURCES
-        test/test_cb.c
+        test/test_temon.c
         src/temperature_monitor.c
         test/unity.c
 )

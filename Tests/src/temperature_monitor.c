@@ -1,4 +1,3 @@
-// temperature_monitor.c
 #include "temperature_monitor.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,7 +8,7 @@ void circular_buffer_init(CircularBuffer_t* const buffer) {
     if (NULL == buffer) {
         return;
     }
-    
+
     buffer->write_index = 0U;
     buffer->read_index = 0U;
     buffer->count = 0U;
@@ -17,67 +16,62 @@ void circular_buffer_init(CircularBuffer_t* const buffer) {
 }
 
 bool circular_buffer_write(CircularBuffer_t* const buffer, const float value) {
-    if (buffer == NULL) {
+    bool result = false;
+
+    if (NULL == buffer) {
         return false;
     }
 
     pthread_mutex_lock(&buffer->mutex);
 
-    // Always write, overwriting oldest data if full
-    buffer->temperatures[buffer->write_index] = value;
-    buffer->write_index = (buffer->write_index + 1U) % BUFFER_SIZE;
-
-    // Limit count to buffer size
     if (buffer->count < BUFFER_SIZE) {
+        buffer->temperatures[buffer->write_index] = value;
+        buffer->write_index = (buffer->write_index + 1U) % BUFFER_SIZE;
         buffer->count++;
+        result = true;
     }
 
     pthread_mutex_unlock(&buffer->mutex);
-    return true;
+    return result;
 }
 
 bool circular_buffer_read(CircularBuffer_t* const buffer, float* const value) {
     bool result = false;
-    
-    if ((buffer == NULL) || (value == NULL)) {
+
+    if ((NULL == buffer) || (NULL == value)) {
         return false;
     }
-    
+
     pthread_mutex_lock(&buffer->mutex);
-    
+
     if (buffer->count > 0U) {
         *value = buffer->temperatures[buffer->read_index];
         buffer->read_index = (buffer->read_index + 1U) % BUFFER_SIZE;
         buffer->count--;
         result = true;
     }
-    
+
     pthread_mutex_unlock(&buffer->mutex);
     return result;
 }
 
 void display_buffer_contents(CircularBuffer_t* const buffer) {
-    uint32_t i, display_count;
+    float temperature;
+    uint32_t reading_count = 0U;
 
     if (NULL == buffer) {
         return;
     }
 
-    pthread_mutex_lock(&buffer->mutex);
-
     printf("\nCurrent Buffer Contents:\n");
-    printf("Total Readings: %u\n", buffer->count);
 
-    display_count = buffer->count;
-    for (i = 0U; i < display_count; i++) {
-        float temperature = buffer->temperatures[
-            (buffer->read_index + i) % BUFFER_SIZE
-        ];
-
-        printf("Reading %u: %.2f°C\n", i + 1, temperature);
+    while (circular_buffer_read(buffer, &temperature)) {
+        printf("Reading %u: %.2f°C\n", ++reading_count, temperature);
     }
 
-    pthread_mutex_unlock(&buffer->mutex);
+    if (0U == reading_count) {
+        printf("Buffer is empty\n");
+    }
 }
 
 float simulate_temperature_reading(void) {
@@ -94,12 +88,12 @@ void* sensor_thread(void* arg) {
     struct timespec next_period;
     time_t current_time;
     struct tm* time_info;
-    
+
     clock_gettime(CLOCK_MONOTONIC, &next_period);
-    
+
     while (*(thread_args->running)) {
         float temperature = simulate_temperature_reading();
-        
+
         if (circular_buffer_write(thread_args->buffer, temperature)) {
             current_time = time(NULL);
             time_info = localtime(&current_time);
@@ -109,24 +103,24 @@ void* sensor_thread(void* arg) {
                    time_info->tm_sec,
                    temperature);
         }
-        
+
         sleep_until_next_period(&next_period, SENSOR_READ_INTERVAL_SEC);
     }
-    
+
     return NULL;
 }
 
 void* display_thread(void* arg) {
     ThreadArgs_t* thread_args = (ThreadArgs_t*)arg;
     struct timespec next_period;
-    
+
     clock_gettime(CLOCK_MONOTONIC, &next_period);
-    
+
     while (*(thread_args->running)) {
         display_buffer_contents(thread_args->buffer);
-        
+
         sleep_until_next_period(&next_period, DISPLAY_INTERVAL_SEC);
     }
-    
+
     return NULL;
 }
